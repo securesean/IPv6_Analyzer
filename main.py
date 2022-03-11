@@ -27,10 +27,6 @@ from requests import get
 # Idea: maybe implement traceroute and port scanning
 # Idea: get my own IPv6 Address(s) and do analysis. Requests -> ifconfig.co , or www.kame.net, linux-ipv6.org, ipv6-test.com
 
-ipStr = "2607:f8b0:4009:802::200e" #
-
-
-
 
 def macToIPv6_self_stateless_config(mac):
     return "fe80::" + macToIPv6_only_last_64_bits_EUI(mac)
@@ -2705,7 +2701,7 @@ def prettyPrintUnicastAddress(ip: ipaddress.IPv6Address) -> None:
 
 
 
-
+# TODO: Also give the compressed words of the IP address: "fe00:00:00:00:00:01" -> fe00::1"
 # From: https://learnmeabitcoin.com/technical/mnemonic#bip39-wordlist
 def ip_to_bip_words(ip: ipaddress.IPv6Address) -> str:
     sumString = ""
@@ -2715,6 +2711,7 @@ def ip_to_bip_words(ip: ipaddress.IPv6Address) -> str:
         sumString += bip39WordList[index1] + " " + bip39WordList[index2] + " : "
     return sumString.rstrip(": ")
 
+# TODO: Also give the compressed words of the IP address: "fe00:00:00:00:00:01" -> fe00::1"
 def ip_to_words(ip: ipaddress.IPv6Address) -> str:
     sumString = ""
     for hextet in ip.exploded.split(":"):
@@ -2735,111 +2732,125 @@ def hex_to_words(input: str) -> str:
             aList.append( evenWordDict[hexString])
     return " ".join(aList)
 
+def main(ipStr : str):
+    '''
+    :param ipStr:
+    :return:
+    '''
+    if (ipStr.count("::") > 2):
+        print("Error: Can only have 1 '::'")
+        exit()
+    elif (ipStr == "::"):
+        print(
+            ipStr + " is not a valid address. BUT it is used as a source address when StateLess Address Auto-Configuration (SLAAC) is doing Neighbor Solicitation ")
+        exit()
 
-# Start of logic
+    print("Analyzing: " + ipStr)
+    ip = ipaddress.ip_address(ipStr)
 
-if (ipStr.count("::") > 2):
-    print("Error: Can only have 1 '::'" )
-    exit()
-elif(ipStr == "::"):
-    print(ipStr + " is not a valid address. BUT it is used as a source address when StateLess Address Auto-Configuration (SLAAC) is doing Neighbor Solicitation ")
-    exit()
+    KnownIPs = {
+        # TODO: Add this small list: https://youtu.be/z7Al3P8ShM8?t=1482
+        ipaddress.ip_address("2001:4860:4860::8888"): "Google DNS",
+        ipaddress.ip_address("2001:4860:4860::8844"): "Google DNS",
+        ipaddress.ip_address("FF02::1"): "All nodes",
+        ipaddress.ip_address("FF02::2"): "",
+        ipaddress.ip_address("FF02::101"): "All NTP Servers",
+        ipaddress.ip_address("FF02::1:2"): "... All Routers?",
+        ipaddress.ip_address(
+            "::1"): "Loop back address. This should never be used in a real packet unless you are going through the Stateless IP assignment process?",
+    }
 
-print("Analyzing: " + ipStr)
-ip = ipaddress.ip_address(ipStr)
+    # Built in to the IP address library in python ipaddress
+    # From https://docs.python.org/3/library/ipaddress.html
+    if ip.is_multicast:
+        print("RFC 2373 defines this as " + Fore.GREEN + "Multicast" + Fore.RESET)
+    if ip.is_private:
+        print("IANA ipv6-special-registry defines this as " + Fore.BLUE + "Private" + Fore.RESET)
+    if ip.is_global:
+        print("IANA ipv6-special-registry defines this as " + Fore.GREEN + "Global" + Fore.RESET)
+    if ip.is_unspecified:
+        print("RFC 2373 defines this as " + Fore.YELLOW + "Unspecified" + Fore.RESET)
+    if ip.is_reserved:
+        print("IETF has " + Fore.RED + "reserved this address" + Fore.RESET)
+    if ip.is_loopback:
+        print("RFC 2373 defines this as a " + Fore.BLUE + "loopback address" + Fore.RESET)
+    if ip.is_link_local:
+        print("RFC 3927 defines this as " + Fore.BLUE + "link local" + Fore.RESET)
+    if ip.is_site_local:
+        print("RFC 3879 defines this as deprecated" + Fore.RED + "site local" + Fore.RESET)
+    # Embedded IPv4 - if they start with ::FFFF/96
+    mapped = ip.ipv4_mapped
+    if mapped != None:
+        print("Mapped IPv4: " + mapped)
 
+    # Scope ID - What is that?
+    # scope_id = ip.scope_id
+    # if scope_id != None:
+    #    print("Scope ID: " + scope_id)
 
-KnownIPs = {
-    # TODO: Add this small list: https://youtu.be/z7Al3P8ShM8?t=1482
-    ipaddress.ip_address("2001:4860:4860::8888"): "Google DNS",
-    ipaddress.ip_address("2001:4860:4860::8844"): "Google DNS",
-    ipaddress.ip_address("FF02::1"): "All nodes",
-    ipaddress.ip_address("FF02::2"): "",
-    ipaddress.ip_address("FF02::101"): "All NTP Servers",
-    ipaddress.ip_address("FF02::1:2"): "... All Routers?",
-    ipaddress.ip_address("::1"): "Loop back address. This should never be used in a real packet unless you are going through the Stateless IP assignment process?",
-}
+    # sean created
+    if ip in ipaddress.ip_network('0000::/8', strict=False):
+        print("This IP address is reserved by IETF [RFC3513]]")
+    if ip in ipaddress.ip_network('2000::/3', strict=False):
+        prettyPrintUnicastAddress(ip)
+        print(
+            "This IP is a Global Unicast address; only identifiies only one node, and are only used for for one to one " +
+            "communication. These addresses are also Globally routable and reachable in the IPv6 Internet [RFC3513]")
+    if ip in ipaddress.ip_network('FC00::/7', strict=False):
+        prettyPrintUnicastAddress(ip)
+        print(
+            "This IP is a Unique Local Unicast Address (ULA); only identifiies only one node, and are only used for for one to one communication. Also known as Private IPv6 addresses, Local addresses and CAN NOT be routed on the internet but routers can route them through a network (like RFC 1918: 10.0.0.0/8). Registration with a numbering authority not needed. [RFC4193]")
+    if ip in ipaddress.ip_network('FE80::/10', strict=False):
+        prettyPrintUnicastAddress(ip)
+        print(
+            "This IP is Link Local Unicast. Router will NOT forward these packets, they are only for the local link (aka the single local network segment). Present in an auto self config; So all routers listen for this and will NOT forward the packects. Link local addresses are present on all interfaces and are used for many essential link protocols such as neighbor discovery, duplicate address detection and router advertisement. [RFC3513]")
+    if ip in ipaddress.ip_network('FEC0::/10', strict=False):
+        print(
+            "This IP is technically reserved by IETF and was considered 'Site Local address'. Deprecated by Cisco on iOS (just started dropping all packets). Should probably never be used")
+    if ip in ipaddress.ip_network('FF00::/8', strict=False):
+        print(
+            "This IP is local Multicast. Broadcast for IPv6 networks. It is NOT routed on the internet. If it starts with ff02::1 it's likely part of the StateLess Address Auto-Configuration (SLAAC) where a node is trying to resolve a MAC address (FF02::1:xx:xx:xx:xx where the last 64 bits is the EUI-64 of the device we are attempting to communicate with).  ")
+    # if ip in ipaddress.ip_network("FF0E:",strict=False):
+    #    print("Multicast Global. Self assigned?")
+    # if ip in ipaddress.ip_network("FF0E::1:ff00::/104",strict=False):
+    #    print("This IP is self assigned config IP")
 
-# Built in to the IP address library in python ipaddress
-# From https://docs.python.org/3/library/ipaddress.html
-if ip.is_multicast:
-    print("RFC 2373 defines this as " + Fore.GREEN + "Multicast" + Fore.RESET)
-if ip.is_private:
-    print("IANA ipv6-special-registry defines this as " + Fore.BLUE + "Private" + Fore.RESET)
-if ip.is_global:
-    print("IANA ipv6-special-registry defines this as " + Fore.GREEN + "Global" + Fore.RESET)
-if ip.is_unspecified:
-    print("RFC 2373 defines this as " + Fore.YELLOW + "Unspecified" + Fore.RESET)
-if ip.is_reserved:
-    print("IETF has " + Fore.RED + "reserved this address" + Fore.RESET)
-if ip.is_loopback:
-    print("RFC 2373 defines this as a " + Fore.BLUE + "loopback address" + Fore.RESET)
-if ip.is_link_local:
-    print("RFC 3927 defines this as " + Fore.BLUE + "link local" + Fore.RESET)
-if ip.is_site_local:
-    print("RFC 3879 defines this as deprecated" + Fore.RED + "site local" + Fore.RESET)
-# Embedded IPv4 - if they start with ::FFFF/96
-mapped = ip.ipv4_mapped
-if mapped != None:
-    print("Mapped IPv4: " + mapped)
+    if ip in ipaddress.ip_network('2002::/16', strict=False):
+        print("This is a 6to4 relay address. From IP 192.88.99/24")
 
-# Scope ID - What is that?
-#scope_id = ip.scope_id
-#if scope_id != None:
-#    print("Scope ID: " + scope_id)
+    # TODO:
+    # if ip address ends in all-zeros for it's EUI-64 bit address then state here that it might be used as an Anycast address
+    # But Anycast address could also be litterially any Unicast address (Anycast means more than one interface can have this address)
 
-# sean created
-if ip in ipaddress.ip_network('0000::/8',strict=False):
-    print("This IP address is reserved by IETF [RFC3513]]")
-if ip in ipaddress.ip_network('2000::/3',strict=False):
-    prettyPrintUnicastAddress(ip)
-    print("This IP is a Global Unicast address; only identifiies only one node, and are only used for for one to one " +
-          "communication. These addresses are also Globally routable and reachable in the IPv6 Internet [RFC3513]")
-if ip in ipaddress.ip_network('FC00::/7',strict=False):
-    prettyPrintUnicastAddress(ip)
-    print("This IP is a Unique Local Unicast Address (ULA); only identifiies only one node, and are only used for for one to one communication. Also known as Private IPv6 addresses, Local addresses and CAN NOT be routed on the internet but routers can route them through a network (like RFC 1918: 10.0.0.0/8). Registration with a numbering authority not needed. [RFC4193]")
-if ip in ipaddress.ip_network('FE80::/10',strict=False):
-    prettyPrintUnicastAddress(ip)
-    print("This IP is Link Local Unicast. Router will NOT forward these packets, they are only for the local link (aka the single local network segment). Present in an auto self config; So all routers listen for this and will NOT forward the packects. Link local addresses are present on all interfaces and are used for many essential link protocols such as neighbor discovery, duplicate address detection and router advertisement. [RFC3513]")
-if ip in ipaddress.ip_network('FEC0::/10',strict=False):
-    print("This IP is technically reserved by IETF and was considered 'Site Local address'. Deprecated by Cisco on iOS (just started dropping all packets). Should probably never be used")
-if ip in ipaddress.ip_network('FF00::/8',strict=False):
-    print("This IP is local Multicast. Broadcast for IPv6 networks. It is NOT routed on the internet. If it starts with ff02::1 it's likely part of the StateLess Address Auto-Configuration (SLAAC) where a node is trying to resolve a MAC address (FF02::1:xx:xx:xx:xx where the last 64 bits is the EUI-64 of the device we are attempting to communicate with).  ")
-#if ip in ipaddress.ip_network("FF0E:",strict=False):
-#    print("Multicast Global. Self assigned?")
-#if ip in ipaddress.ip_network("FF0E::1:ff00::/104",strict=False):
-#    print("This IP is self assigned config IP")
+    # TODO:
+    # test for "FF02::1:FFxx:xxxx" - the last 6 hex char's (that's 28 bits right?),
+    # that's the SLAAC, all-nodes multicast, and this is the IP address look up of a neighbor
+    # Seen in https://youtu.be/z7Al3P8ShM8?t=1482
 
-if ip in ipaddress.ip_network('2002::/16',strict=False):
-    print("This is a 6to4 relay address. From IP 192.88.99/24")
+    # TODO: Make "Pretty Print Multicast function: https://www.ciscopress.com/articles/article.asp?p=2803866&seqNum=5#:~:text=An%20IPv6%20multicast%20address%20defines,the%20IPv4%20multicast%20address%20224.0.&text=A%20packet%20sent%20to%20a,has%20a%20unicast%20source%20address.
+    # TODO: Add information from IANA.org: https://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry.xhtml
+    # TODO: Add information from IANA.org: https://www.iana.org/assignments/ipv6-address-space/ipv6-address-space.xhtml
+    #       Ex. "Well Known Prefix" 64:ff9b::/96 is used in an algorithmic mapping between IPv4 to IPv6 addresses
+    # TODO: Add information from IANA.org: https://www.iana.org/assignments/ipv6-unicast-address-assignments/ipv6-unicast-address-assignments.xhtml
 
-# TODO:
-# if ip address ends in all-zeros for it's EUI-64 bit address then state here that it might be used as an Anycast address
-# But Anycast address could also be litterially any Unicast address (Anycast means more than one interface can have this address)
+    if ip in KnownIPs:
+        print("Well Known: " + KnownIPs[ip])
+    # Global ID
 
-# TODO:
-# test for "FF02::1:FFxx:xxxx" - the last 6 hex char's (that's 28 bits right?),
-# that's the SLAAC, all-nodes multicast, and this is the IP address look up of a neighbor
-# Seen in https://youtu.be/z7Al3P8ShM8?t=1482
+    # MAC address generated 'Interface ID' or 'EUI-64'
+    # last 64 bits
 
-# TODO: Make "Pretty Print Multicast function: https://www.ciscopress.com/articles/article.asp?p=2803866&seqNum=5#:~:text=An%20IPv6%20multicast%20address%20defines,the%20IPv4%20multicast%20address%20224.0.&text=A%20packet%20sent%20to%20a,has%20a%20unicast%20source%20address.
-# TODO: Add information from IANA.org: https://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry.xhtml
-# TODO: Add information from IANA.org: https://www.iana.org/assignments/ipv6-address-space/ipv6-address-space.xhtml
-#       Ex. "Well Known Prefix" 64:ff9b::/96 is used in an algorithmic mapping between IPv4 to IPv6 addresses
-# TODO: Add information from IANA.org: https://www.iana.org/assignments/ipv6-unicast-address-assignments/ipv6-unicast-address-assignments.xhtml
+    print("\n\nUseless Information:")
+    print("\t" +ipStr)
+    print("\t" +ip.exploded)
+    print("\t" +ip_to_words(ip))
+    print("\t" +ip_to_bip_words(ip))
+    print("\t" +ip.reverse_pointer)
 
+if __name__ == "__main__":
+    ipList = [
+        "2607:f8b0:4009:802::200e",
+        ]
 
-if ip in KnownIPs:
-    print("Well Known: " + KnownIPs[ip])
-# Global ID
-
-# MAC address generated 'Interface ID' or 'EUI-64'
-# last 64 bits
-
-
-print("\n\nUseless Information:")
-print(ipStr)
-print(ip.exploded)
-print(ip_to_words(ip))
-print(ip_to_bip_words(ip))
-print(ip.reverse_pointer)
+    for ipStr in ipList:
+        main(ipStr)
