@@ -21,14 +21,13 @@ from requests import get
 # TODO: Look up who was issued the prefix/"allocation"/"inetnum":
 #       https://www.arin.net/resources/registry/whois/rws/api/
 #       https://stat.ripe.net/app/launchpad
-# TODO: highlight ULA / Unique Local Address / first 64 bits. Prefix
-# TODO: Option/param for given mac, compute IPv6
+# TODO: Put IPv6 address in as a parameter
 # TODO: macToIPv6_self_stateless_config
 # TODO: macToIPv6_only_last_64_bits
 # Idea: maybe implement traceroute and port scanning
 # Idea: get my own IPv6 Address(s) and do analysis. Requests -> ifconfig.co , or www.kame.net, linux-ipv6.org, ipv6-test.com
 
-ipStr = "fe80::a063:2cff:fefd:ef29"
+ipStr = "2607:f8b0:4009:802::200e" #
 
 
 
@@ -2696,6 +2695,8 @@ def prettyPrintUnicastAddress(ip: ipaddress.IPv6Address) -> None:
     org = get("https://api.macvendors.com/" + mac).text
     if "Not Found" not in org:
         print("\tMAC Issued Org: " + org)
+    else:
+        print("\t(But this MAC looks fake)")
 
     #doubleCheck = macToIPv6_only_last_64_bits_EUI(mac)
     #print("EUI-64: " + doubleCheck)
