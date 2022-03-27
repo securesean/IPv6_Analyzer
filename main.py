@@ -2698,7 +2698,191 @@ def prettyPrintUnicastAddress(ip: ipaddress.IPv6Address) -> None:
     #print("EUI-64: " + doubleCheck)
 
 
+# Pass in two strings:
+# a = 11100
+# b = 11000
+# I know this is terrible logic, but I'm brain dead and I just need this to be done
+def binMaskSubtract(a, b):
+    sumString = []
+    if len(a) != len(b):
+        print("Warning! Binary Strings are not same length")
+    for smaller, bigger in zip(a, b):
+        if bigger == "0":
+            if smaller == "1":
+                sumString.append("1")
+            else:
+                sumString.append("0")
+        else:  # bigger is 1
+            if smaller == "0":
+                sumString.append("0")
+            else:  # smaller is 1 and bigger is 1
+                sumString.append("0")
+    return ''.join(sumString)
 
+
+# Breaks down the ISP, Company, and Company number
+# Given a list of IP addresses, group by ISP numbers, and Company numbers,
+# TODO: straiten out all the naming conventions and data classes
+# TODO: Cast them as network addresses and test with things like ipaddress.overlaps()
+# https://docs.python.org/3/library/ipaddress.html#ip-addresses
+# TODO: Add import option from pcap
+def getDictOfISPAddresses(ipList) -> dict:
+    retDict = {
+        "iana_global_prefix_list": [],
+        "regional_registry": [],
+        "provider_prefix": [],
+        "site_prefix": [],
+        "subnet_prefix": [],
+    }
+
+    ################    iana_global_prefix  ################
+    iana_global_prefix_mask = ipaddress.ip_network("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/3",
+                                                   strict=False).netmask.packed
+    iana_global_prefix_mask_binStr = bin(int.from_bytes(iana_global_prefix_mask, "big")).lstrip("0b")
+    iana_global_prefix_only_bytes = int(iana_global_prefix_mask_binStr, 2).to_bytes(16,
+                                                                                    'big')  # 128 bit address is 16 bytes. Type of bytes
+    iana_global_prefix_only = ipaddress.ip_network(
+        iana_global_prefix_only_bytes)  # back to an ipaddress object. Note there is no "/3" so the default mask is all FF's
+
+    ################    regional_registry_prefix   ################
+    regional_registry_prefix_mask = ipaddress.ip_network("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/23",
+                                                         strict=False).netmask.packed
+    regional_registry_prefix_mask_binStr = bin(int.from_bytes(regional_registry_prefix_mask, "big")).lstrip("0b")
+    # str '11111111111111111111111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+    # Now subtract the network masks above so we isolate the bits we want
+    regional_registry_prefix_mask_binStr = binMaskSubtract(regional_registry_prefix_mask_binStr,
+                                                           iana_global_prefix_mask_binStr)
+    # Now get it to a usable form
+    regional_registry_prefix_only_bytes = int(regional_registry_prefix_mask_binStr, 2).to_bytes(16,
+                                                                                                'big')  # 128 bit address is 16 bytes. Type of bytes
+    regional_registry_prefix_only = ipaddress.ip_network(
+        regional_registry_prefix_only_bytes)  # back to an ipaddress object. Note there is no "/3" so the default mask is all FF's
+
+    ################    provider_prefix (ISP)  ################
+    provider_prefix_mask = ipaddress.ip_network("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/32",
+                                                strict=False).netmask.packed
+    provider_prefix_mask_binStr = bin(int.from_bytes(provider_prefix_mask, "big")).lstrip("0b")
+
+    # Now subtract the network masks above so we isolate the bits we want
+    provider_prefix_mask_binStr = binMaskSubtract(provider_prefix_mask_binStr, iana_global_prefix_mask_binStr)
+    provider_prefix_mask_binStr = binMaskSubtract(provider_prefix_mask_binStr, regional_registry_prefix_mask_binStr)
+
+    # Now get it to a usable form
+    provider_prefix_only_bytes = int(provider_prefix_mask_binStr, 2).to_bytes(16,
+                                                                              'big')  # 128 bit address is 16 bytes. Type of bytes
+    regional_registry_prefix_only = ipaddress.ip_network(
+        provider_prefix_only_bytes)  # back to an ipaddress object. Note there is no "/3" so the default mask is all FF's
+
+    ################    site_prefix (Company)  ################
+    provider_prefix_mask = ipaddress.ip_network("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/48",
+                                                strict=False).netmask.packed
+    site_prefix_mask_binStr = bin(int.from_bytes(provider_prefix_mask, "big")).lstrip("0b")
+
+    # Now subtract the network masks above so we isolate the bits we want
+    site_prefix_mask_binStr = binMaskSubtract(site_prefix_mask_binStr, iana_global_prefix_mask_binStr)
+    site_prefix_mask_binStr = binMaskSubtract(site_prefix_mask_binStr, regional_registry_prefix_mask_binStr)
+    site_prefix_mask_binStr = binMaskSubtract(site_prefix_mask_binStr, provider_prefix_mask_binStr)
+
+    # Now get it to a usable form
+    site_prefix_only_bytes = int(site_prefix_mask_binStr, 2).to_bytes(16,
+                                                                      'big')  # 128 bit address is 16 bytes. Type of bytes
+    regional_registry_prefix_only = ipaddress.ip_network(
+        site_prefix_only_bytes)  # back to an ipaddress object. Note there is no "/3" so the default mask is all FF's
+
+    ################    subnet_prefix (A Company's Subnet)  ################
+    subnet_prefix_mask = ipaddress.ip_network("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/64",
+                                              strict=False).netmask.packed
+    subnet_prefix_mask_binStr = bin(int.from_bytes(subnet_prefix_mask, "big")).lstrip("0b")
+
+    # Now subtract the network masks above so we isolate the bits we want
+    subnet_prefix_mask_binStr = binMaskSubtract(subnet_prefix_mask_binStr, iana_global_prefix_mask_binStr)
+    subnet_prefix_mask_binStr = binMaskSubtract(subnet_prefix_mask_binStr, regional_registry_prefix_mask_binStr)
+    subnet_prefix_mask_binStr = binMaskSubtract(subnet_prefix_mask_binStr, provider_prefix_mask_binStr)
+    subnet_prefix_mask_binStr = binMaskSubtract(subnet_prefix_mask_binStr, site_prefix_mask_binStr)
+
+    # Now get it to a usable form
+    subnet_prefix_only_bytes = int(subnet_prefix_mask_binStr, 2).to_bytes(16,
+                                                                          'big')  # 128 bit address is 16 bytes. Type of bytes
+    regional_registry_prefix_only = ipaddress.ip_network(
+        subnet_prefix_only_bytes)  # back to an ipaddress object. Note there is no "/3" so the default mask is all FF's
+
+    ''' 
+    print(iana_global_prefix_mask_binStr)
+    print(regional_registry_prefix_mask_binStr)
+    print(provider_prefix_mask_binStr)
+    print(site_prefix_mask_binStr)
+    print(subnet_prefix_mask_binStr)
+
+    We will have:
+    11100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+    00011111111111111111111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+    00000000000000000000000111111111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+    00000000000000000000000000000000111111111111111100000000000000000000000000000000000000000000000000000000000000000000000000000000
+    00000000000000000000000000000000000000000000000011111111111111110000000000000000000000000000000000000000000000000000000000000000
+    '''
+
+    for ipStr in ipList:
+        ip = ipaddress.ip_address(ipStr)
+        ipStr = ip.exploded
+        ipBytes = ip.packed
+        print("Analyzing: " + ipStr)
+
+        ################ Get IANA Numbering Authority Prefix  ################
+        hextets = []
+        counter = 0
+        hextet_Part1 = None
+        hextet_Part2 = None
+
+        for a, b in (zip(ip.packed, iana_global_prefix_only_bytes)):
+            if (counter % 2) == 0:
+                hextet_Part1 = a & b
+            else:
+                hextet_Part2 = a & b
+
+                # Put them together
+                fullHextet = hex(hextet_Part1).lstrip("0x") + hex(hextet_Part2).lstrip("0x")
+                fullHextet = '{:02X}'.format(hextet_Part1) + '{:02X}'.format(hextet_Part2)
+                hextets.append(fullHextet)
+
+                # Clean up
+                hextet_Part1 = None
+                hextet_Part2 = None
+            counter += 1
+        iana_global_prefix_ipStr = ":".join(hextets)
+        if iana_global_prefix_ipStr not in retDict["iana_global_prefix_list"]:
+            print("Found new IANA Global Prefix: " + iana_global_prefix_ipStr)
+            retDict["iana_global_prefix_list"].append(iana_global_prefix_ipStr)
+
+        ################ Get Regional Registry Prefix  ################
+        hextets = []
+        counter = 0
+        hextet_Part1 = None
+        hextet_Part2 = None
+        for a, b in (zip(ip.packed, regional_registry_prefix_only_bytes)):
+            if (counter % 2) == 0:
+                hextet_Part1 = (a & b)
+            else:
+                hextet_Part2 = a & b
+
+                # Put them together
+                fullHextet = hex(hextet_Part1).lstrip("0x") + hex(hextet_Part2).lstrip("0x")
+                fullHextet = '{:02X}'.format(hextet_Part1) + '{:02X}'.format(hextet_Part2)
+                hextets.append(fullHextet)
+
+                # Clean up
+                hextet_Part1 = None
+                hextet_Part2 = None
+            counter += 1
+        regional_registry_prefix_ipStr = ":".join(hextets)
+        if regional_registry_prefix_ipStr not in retDict["regional_registry"]:
+            print("Found new Regional Registry Prefix: " + regional_registry_prefix_ipStr)
+            retDict["regional_registry"].append(regional_registry_prefix_ipStr)
+
+        '''
+            I could do the rest, (Provider, site, subnet) but they would be pointless because two different addresses
+            could have two different regions, but have the site provider or site or subnet ID's
+        '''
+    return retDict
 
 
 # TODO: Also give the compressed words of the IP address: "fe00:00:00:00:00:01" -> fe00::1"
@@ -2750,14 +2934,16 @@ def main(ipStr : str):
 
     KnownIPs = {
         # TODO: Add this small list: https://youtu.be/z7Al3P8ShM8?t=1482
+        # TODO: Add this list: https://menandmice.com/blog/ipv6-reference-multicast
         ipaddress.ip_address("2001:4860:4860::8888"): "Google DNS",
         ipaddress.ip_address("2001:4860:4860::8844"): "Google DNS",
         ipaddress.ip_address("FF02::1"): "All nodes",
         ipaddress.ip_address("FF02::2"): "",
+        ipaddress.ip_address("FF02::fb"): "Multicast DNS",
         ipaddress.ip_address("FF02::101"): "All NTP Servers",
         ipaddress.ip_address("FF02::1:2"): "... All Routers?",
         ipaddress.ip_address(
-            "::1"): "Loop back address. This should never be used in a real packet unless you are going through the Stateless IP assignment process?",
+            "::1"): "Loop back address. This should never be used in a real packet unless you are going through the Stateless IP assignment process",
     }
 
     # Built in to the IP address library in python ipaddress
@@ -2846,11 +3032,14 @@ def main(ipStr : str):
     print("\t" +ip_to_words(ip))
     print("\t" +ip_to_bip_words(ip))
     print("\t" +ip.reverse_pointer)
+    print("")
 
 if __name__ == "__main__":
     ipList = [
         "2607:f8b0:4009:802::200e",
         ]
+
+    getDictOfISPAddresses(ipList)
 
     for ipStr in ipList:
         main(ipStr)
